@@ -1,0 +1,260 @@
+# Karafun Intercept — Design Spec
+
+> **Status:** Draft — written after brainstorming (Approach C: hybrid observation).
+> **Goal:** A Textual TUI that observes the local KaraFun Player over its Player Control WebSocket API and tracks turn-taking, singers, and new-song activity.
+> **No code is written until this spec is approved.**
+
+---
+
+## 1. Overview & Goal
+
+**Goal.** Provide a terminal dashboard that connects to a locally-running KaraFun Player (desktop) and tracks *social* state around the song queue: whose turn it is, everyone who has committed a song, notifications when a new user commits a song, and per-user recency ("last seen") to guess whether a user is still present.
+
+**Data source.** The KaraFun Player Control API: a WebSocket server the desktop player hosts at `ws://localhost:57570/`. The protocol is XML-over-WebSocket (see `docs/research/karafun-api/02-api-reference.md`). It is undocumented/removed; live verification against the running player is required for the real-time behavior (see Open Questions).
+
+**Non-goal.** The KaraFun Box API (REST, commercial/venue) is **out of scope**. No persistence, no remote/cloud, no music metadata enrichment beyond what the player emits.
+
+---
+
+## 2. Scope
+
+### In scope (MVP)
+
+- Connect to `ws://localhost:57570/` and stay connected (auto-reconnect).
+- Observe current playback state + queue (who is playing / next / who queued each song).
+- Track per-user `last_seen` and compute recency.
+- Detect "new user committed a song" → notification.
+- TUI: current song, queue view, singer roster with recency, notification banner.
+- Graceful UI when the player is not running (show "connecting…").
+
+### Out of scope (YAGNI)
+
+- Playback *control* (play/pause/next/pitch/tempo/volume) — observe-only for now.
+- Searching/browsing the full catalog from the TUI — only the live queue/status.
+- Local persistence, configuration files, settings screens.
+- The KaraFun Box (commercial) API, authentication, or remote playback.
+
+---
+
+## 3. Architecture
+
+Single-process async Textual app. Four layers, each a focused module:
+
+```
+┌──────────────────────────────────────────┐
+│ TUI (textual App)   ───reactive──► Model │
+│                         events            │
+├──────────────────────────▲───────────────┤
+│ KarafunClient (ws + XML) ─┘              │
+│  - connects, sends actions, parses XML   │
+│  - emits structured events               │
+├──────────────────────────▲───────────────┤
+│ xml_proto (stdlib XML     │              │
+│  parse + action builders) │              │
+└──────────────────────────┘              │
+```
+
+- **`xml_proto`** — pure functions: parse a `<status>`/`<list>`/`<catalogList>` blob into typed dataclasses; build outbound action XML strings. No I/O.
+- **`KarafunClient`** — async WebSocket lifecycle: connect, reconnect with backoff, send actions (`<action type="getStatus">…</action>`), parse inbound XML via `xml_proto`, and emit typed events (`StatusUpdate`, `Disconnected`, `Error`). Exposes a small surface (`connect()`, `request_status()`, and an `async def events()` iterator the client consumes or the model subscribes to).
+- **`SessionModel`** — holds all in-memory state (queue, singers, recencies, turn) and derives deltas/notifications. Pure logic — no I/O, no WebSocket, no Textual widgets. Emits `Notification` events to the UI.
+- **TUI (`app.py`)** — a `textual.app.App` reacting to `SessionModel` events. Keeps UI rendering out of the model (PHILOSOPHY contract: logic in modules, rendering in the TUI layer).
+
+The TUI drives the client: it instantiates `KarafunClient`, feeds events into `SessionModel`, and reacts to model notifications.
+
+---
+
+## 4. Observation Strategy (Approach C — hybrid)
+
+The server *may* push `<status>` updates unsolicited, but this is unverified. The client is robust to both:
+
+1. On connect, immediately send `<action type="getStatus"></action>` to seed state.
+2. Keep a poll fallback: every `POLL_INTERVAL` seconds (default `2.0`), if no status has been received in the last `3s`, send a fresh `getStatus`. This guarantees correctness even if the server never pushes.
+3. Treat **every** inbound `<status>` uniformly (solicited or unsolicited); deduplicate identical payloads by content so a push + a poll response don't double-count.
+4. Any `<status>` → forward to `SessionModel.apply_status(...)`.
+
+`POLL_INTERVAL` and the backoff ceiling are module constants. Reconnection on close/error uses exponential backoff starting at `5s`, capped at `30s`, jittered.
+
+**Why not polling-only (B) or push-only (A):** live access exists to confirm push behavior; the hybrid is the only approach guaranteed correct against an undocumented server, and it degrades gracefully. This is the single architectural risk and the reason live verification matters.
+
+---
+
+## 5. XML Protocol (summary)
+
+Inbound actions are `<action type="..."/>`. Responses are XML documents. Key shapes (full detail in the research doc):
+
+**Status (server→client), drives all social tracking:**
+
+```xml
+<status state="playing">
+  [<position>12</position>]
+  <volumeList><general caption="General">80</general></volumeList>
+  <pitch>0</pitch>
+  <tempo>100</tempo>
+  <queue>
+    <item id="0" status="ready">
+      <title>Song A</title>
+      <artist>Artist A</artist>
+      <year>2020</year>
+      <duration>180</duration>
+      <singer>Alice</singer>
+    </item>
+    ...
+  </queue>
+</status>
+```
+
+**Outbound action examples (observe-only MVP sends only `getStatus`):**
+
+```xml
+<action type="getStatus"></action>
+```
+
+**Catalog/list (for future catalog browsing — NOT in MVP):**
+
+```xml
+<catalogList>
+  <catalog id="1" type="onlineComplete">My Catalog</catalog>
+</catalogList>
+<list total="2">
+  <item id="42"><title>Song</title><artist>Artist</artist>...</item>
+</list>
+```
+
+Parsing uses the stdlib `xml.etree.ElementTree`. Outgoing actions are plain XML strings (no escaping needed for `getStatus`). If search text is added later, escape `&`/`<`/`>` via `xml.sax.saxutils.escape`.
+
+---
+
+## 6. SessionModel — State & Delta Computation
+
+**State (in-memory, mutated only via `apply_status`):**
+
+- `current: StatusSnapshot` — `state` ∈ {`idle`, `infoscreen`, `loading`, `playing`}, `position` (optional seconds), `current_title`/`current_artist` from the playing item.
+- `queue: list[QueueItem]` — ordered; each `QueueItem` = `{id, title, artist, year, duration, singer, item_state}`.
+- `singer_last_seen: dict[str, datetime]` — `singer -> last time a status mentioned them in the queue`.
+- `singer_first_seen: dict[str, datetime]` — for "how often it's their turn" / presence history.
+- `known_singers: set[str]` — singers ever seen this session (drives new-user detection).
+
+**Turn semantics:**
+
+- `current player` = the singer of the queue item whose `item_state`/position aligns with currently-playing content; in the MVP, "it's X's turn" is approximated as: the singer of the front-of-queue item when `state == "playing"`, and "up next" = front-of-queue singer when not yet playing.
+- Queue order = turn order.
+
+**Delta / notification rules (computed on each new status):**
+
+1. **New user committed a song:** any `<singer>` now in the queue that is not in `known_singers` → emit `Notification(kind="new_singer", singer=..., timestamp=now)`; add to `known_singers` and both dicts.
+2. **Turn advanced:** front-of-queue `singer` changed since last status → emit `Notification(kind="turn", singer=..., timestamp=now)`.
+3. **Recency:** on every status, update `singer_last_seen[singer] = now` for each singer present. UI shows `now - last_seen` per singer.
+4. **Player not playing / idle:** no new notifications; roster still shows recencies.
+
+`apply_status` returns a list of `Notification`s. Notifications carry a `kind`, the `singer`, and a `timestamp`, plus a human `message`. The TUI renders the most recent N (default 8) in the banner.
+
+**Determinism for testing:** `apply_status` uses an injected `now` callable so tests are reproducible.
+
+---
+
+## 7. TUI Design
+
+A single `App` with one screen (MVP; PHILOSPY key-binding discipline: footer derived from `_handle_*` method presence).
+
+```
+┌ KaraFun Intercept ────────────────────────────────────────────────────┐
+│ Current: Song A — Artist A   ▶ playing  1:12/3:00   tempo 100%       │
+├────────────────────────┬─────────────────────────────────────────────┤
+│ QUEUE (turn order)     │ SINGERS (recency / presence)                │
+│ 1. Song A — Alice ▶   │ ● Alice      now playing (2s ago)           │
+│ 2. Song B — Bob       │ ● Bob        1m ago                         │
+│ 3. Song C — Cara      │ ● Cara       4m ago                         │
+│ ...                    │ ● Dan        12m ago (away?)                │
+├────────────────────────┴─────────────────────────────────────────────┤
+│ [NOTIFICATION] Alice queued "Song A" (new)                          │
+│ [NOTIFICATION] It's now Bob's turn                                  │
+├───────────────────────────────────────────────────────────────────────┤
+│ [q] Quit   [r] Refresh   [↑/↓] Navigate                              │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+Widgets (kept simple; YAGNI — no nested component tree):
+
+- Header: app title.
+- `Static` for the current-track header line.
+- A vertical `TreeTable`-like or plain list widget for the queue (left).
+- A plain list widget for the singer roster with recency (right). Use `rich`/`textual` styling; recency color-coded (e.g., dim for >10m "away?", base highlight for recent).
+- A notification banner (`Static` or small `OptionsList`) showing last N notifications.
+- Footer: dynamic key hints derived from base keymap.
+
+**Keymap (base, per PHILOSPY Contract 9):**
+
+- `{"q": "quit", "escape": "quit", "r": "refresh"}`
+- `_handle_quit`, `_handle_refresh` methods → footer auto-shows `[q] Quit` and `[r] Refresh`.
+- `Arrows`/j/k to navigate the queue (the base menu handles up/down; this app opts into arrow dispatch, so `is_navigable`-equivalent = True — documented).
+
+**Styling:** use the project-wide consistent terminal palette (one base highlight color via **bold**/**italic**/**dim** hierarchy; red only for error/notification emphasis). No theme module (inline only).
+
+---
+
+## 8. Error Handling & Connection Lifecycle
+
+- **Player not running / connect refused:** show "Connecting to KaraFun Player…" and retry per backoff. Do not crash; keep UI responsive.
+- **Parse error on inbound XML:** log the raw blob (DEBUG_VVV equivalent / `--log-xml`), drop the message, keep connection open. Do not propagate to crash the model.
+- **Unexpected XML element/field:** ignore unknown fields (forward-compatible); known fields with missing children → sentinel/`None`.
+- **Reconnection:** on socket close/error, back off (5s→30s, jittered) and reconnect; on (re)connect, re-seed with `getStatus`.
+- **Graceful shutdown:** closing the app closes the WebSocket cleanly.
+
+---
+
+## 9. Dependencies & File Layout
+
+**Runtime deps:** `textual` (TUI), stdlib `asyncio`, `xml.etree.ElementTree`, `websockets` (or stdlib `asyncio` streams — decide at impl; prefer `websockets` for robustness). `dataclasses`, `datetime`.
+
+**Project layout:**
+
+```
+src/karafun_intercept/
+├── __init__.py
+├── __main__.py        # python -m karafun_intercept -> main()
+├── app.py             # Textual App + widgets + key handling
+├── client.py          # KarafunClient (WS lifecycle + events)
+├── model.py           # SessionModel, dataclasses, Notification
+├── xml_proto.py       # XML parse + action builders (pure)
+└── _version.py        # __version__
+tests/
+├── conftest.py        # fixtures: fake clock, recorded XML fragments
+├── test_xml_proto.py
+├── test_model.py      # delta/notification rules, deterministic now
+├── test_client.py     # mock transport: feeds recorded XML, asserts getStatus sent
+└── test_app.py        # textual pilot: feed model events, assert UI
+```
+
+**MVP granularity:** implement modules in dependency order (`xml_proto` → `client` → `model` → `app`), each with tests, each commit self-contained.
+
+**Entry point:** `python -m karafun_intercept` and console script `karafun-intercept = "karafun_intercept.app:main"`.
+
+---
+
+## 10. Testing Strategy
+
+- **Pure:** `test_xml_proto.py` (parse each response shape; build `getStatus` action), `test_model.py` (feed recorded `<status>` sequences; assert notification set, recencies, turn detection; deterministic `now`). All `-W error`.
+- **Transport:** `test_client.py` uses a fake async transport that replays recorded XML fragments captured against the live player; asserts `getStatus` is sent on connect and that inbound statuses are forwarded as events.
+- **TUI (pilot):** `test_app.py` — construct the `App` with an injected `SessionModel`/`KarafunClient` double, drive the model with a recorded status, and assert the queue/signer/notification widgets render the expected values.
+- **Live verification step:** against the running player, capture a few real `<status>` samples (save under `tests/fixtures/`) to confirm field shapes (especially whether `<singer>` is always present and whether unsolicited `<status>` pushes occur).
+
+---
+
+## 11. Open Questions (live-player verification needed)
+
+1. Does the player push `<status>` unsolicited, or only in response to actions? (Drives how aggressive the poll fallback must be.)
+2. Is `<singer>` reliably populated in `<queue><item>`? (Core to all tracking; the research marked this unverified.)
+3. What exact `state` values occur, and does `position` update during playback?
+4. Are `<catalogList>`/`<list>` responses available without an account, or player-local only? (Future catalog browsing.)
+
+These are verified against your live player during implementation (Open Question → resolved in code), not blocked here.
+
+---
+
+## 12. PHILOSOPHY Contract Compliance (mapped)
+
+- **Template Method / `super()`:** N/A at scaffold stage; enforced for any base menu/widget overrides when added.
+- **Key Binding Discipline:** base keymap `{"q":"quit","escape":"escape","r":"refresh"}`; footer derived from `_handle_*` presence; one key per action; `q`+`escape` pair exempted.
+- **No generic sink:** any `handle_action` override ends in `super().handle_action(action)`.
+- **Flat config / logging levels:** per-item progress at `DEBUG`; batch/summary at `INFO`; never the deepest debug-firehose level for popup/progress.
+- **YAGNI:** scope section above.
