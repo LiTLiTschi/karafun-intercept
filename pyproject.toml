@@ -1,0 +1,26 @@
+[project]
+name = "karafun-intercept"
+version = "0.1.0"
+description = "A Textual TUI application."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "textual>=0.85",
+]
+
+[project.scripts]
+karafun-intercept = "karafun_intercept.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/karafun_intercept"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
