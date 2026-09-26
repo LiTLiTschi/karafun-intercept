@@ -129,7 +129,7 @@ Parsing uses the stdlib `xml.etree.ElementTree`. Outgoing actions are plain XML 
 **State (in-memory, mutated only via `apply_status`):**
 
 - `current: StatusSnapshot` — `state` ∈ {`idle`, `infoscreen`, `loading`, `playing`}, `position` (optional seconds), `current_title`/`current_artist` from the playing item.
-- `queue: list[QueueItem]` — ordered; each `QueueItem` = `{id, title, artist, year, duration, singer, item_state}`.
+- `queue: list[QueueItem]` — ordered; each `QueueItem` = `{id, title, artist, year, duration, singer: Optional[str], item_state}`. The protocol's `id` is a positional index (0-based queue position), not a stable song id; if a stable song id ever appears, it can be added as an optional `song_id` without affecting turn/signer logic.
 - `singer_last_seen: dict[str, datetime]` — `singer -> last time a status mentioned them in the queue`.
 - `singer_first_seen: dict[str, datetime]` — for "how often it's their turn" / presence history.
 - `known_singers: set[str]` — singers ever seen this session (drives new-user detection).
@@ -141,7 +141,7 @@ Parsing uses the stdlib `xml.etree.ElementTree`. Outgoing actions are plain XML 
 
 **Delta / notification rules (computed on each new status):**
 
-1. **New user committed a song:** any `<singer>` now in the queue that is not in `known_singers` → emit `Notification(kind="new_singer", singer=..., timestamp=now)`; add to `known_singers` and both dicts.
+1. **New user committed a song:** any *present* `<singer>` now in the queue that is not in `known_singers` → emit `Notification(kind="new_singer", singer=..., timestamp=now)`; add to `known_singers` and both dicts. Absent/`None` singers (unassigned slots) are ignored — never counted as a new singer.
 2. **Turn advanced:** front-of-queue `singer` changed since last status → emit `Notification(kind="turn", singer=..., timestamp=now)`.
 3. **Recency:** on every status, update `singer_last_seen[singer] = now` for each singer present. UI shows `now - last_seen` per singer.
 4. **Player not playing / idle:** no new notifications; roster still shows recencies.
