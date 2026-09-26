@@ -55,7 +55,14 @@ Single-process async Textual app. Four layers, each a focused module:
 ```
 
 - **`xml_proto`** — pure functions: parse a `<status>`/`<list>`/`<catalogList>` blob into typed dataclasses; build outbound action XML strings. No I/O.
-- **`KarafunClient`** — async WebSocket lifecycle: connect, reconnect with backoff, send actions (`<action type="getStatus">…</action>`), parse inbound XML via `xml_proto`, and emit typed events (`StatusUpdate`, `Disconnected`, `Error`). Exposes a small surface (`connect()`, `request_status()`, and an `async def events()` iterator the client consumes or the model subscribes to).
+- **`KarafunClient`** — async WebSocket lifecycle: connect, reconnect with backoff, send actions (`<action type="getStatus">…</action>`), parse inbound XML via `xml_proto`, and emit typed events over an `async def events()` iterator the model subscribes to. Event dataclasses (defined alongside the other model dataclasses):
+
+- `StatusUpdate(snapshot: StatusSnapshot)` — a normalized status/queue payload parsed by `xml_proto`.
+- `Disconnected(reason: str)` — socket closed; the client auto-reconnects with backoff.
+- `Error(message: str)` — non-fatal parse/transport error.
+
+Exposes a small surface: `connect()`, `request_status()`, and the `events()` async iterator.
+
 - **`SessionModel`** — holds all in-memory state (queue, singers, recencies, turn) and derives deltas/notifications. Pure logic — no I/O, no WebSocket, no Textual widgets. Emits `Notification` events to the UI.
 - **TUI (`app.py`)** — a `textual.app.App` reacting to `SessionModel` events. Keeps UI rendering out of the model (PHILOSOPHY contract: logic in modules, rendering in the TUI layer).
 
