@@ -12,6 +12,7 @@ import logging
 from typing import ClassVar
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header, OptionList, Static
 
@@ -27,8 +28,6 @@ MAX_NOTIFICATIONS = 50
 class KaraFunInterceptApp(App):
     """Karafun Intercept — the observer TUI."""
 
-    title = "KaraFun Intercept"
-
     CSS = """
     Screen { layout: vertical; }
     #current { height: 1; }
@@ -38,10 +37,10 @@ class KaraFunInterceptApp(App):
     OptionList { height: 1fr; }
     """
 
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("q", "quit", "Quit"),
-        ("escape", "quit", "Quit"),
-        ("r", "refresh", "Refresh"),
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("q", "quit", "Quit"),
+        Binding("escape", "quit", "Quit"),
+        Binding("r", "refresh", "Refresh"),
     ]
 
     def __init__(
@@ -67,6 +66,9 @@ class KaraFunInterceptApp(App):
 
     # --- lifecycle --------------------------------------------------------
     def on_mount(self) -> None:
+        # `title` is Reactive[str]; set at runtime (not as a class attr) to stay
+        # type-clean under pyright (class-level str would override Reactive[str]).
+        self.title = "KaraFun Intercept"
         self._render_all()
         if self._client is not None:
             self.run_worker(self._observe(), exclusive=True)

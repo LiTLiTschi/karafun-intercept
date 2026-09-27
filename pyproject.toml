@@ -28,6 +28,7 @@ packages = ["src/karafun_intercept"]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["docs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
