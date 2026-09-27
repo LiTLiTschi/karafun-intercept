@@ -8,6 +8,7 @@ Spec §6 contract: `current` snapshot + recency dicts (`singer_last_seen` /
   4. idle -> no notification (roster retains recencies)
 `now` is injected so tests are reproducible. No I/O; only depends on xml_proto.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

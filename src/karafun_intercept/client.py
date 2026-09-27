@@ -4,6 +4,7 @@ Approach C: seed a full `getStatus` on connect, consume server pushes, and
 periodically re-seed (no-queue) when the server goes silent. Typed events
 flow up to model.py / app.py. Parsing is delegated to xml_proto.
 """
+
 from __future__ import annotations
 
 import asyncio
