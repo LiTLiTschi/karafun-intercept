@@ -2,9 +2,9 @@ from karafun_intercept.xml_proto import (
     PLAYER_HOST,
     PLAYER_PORT,
     POLL_INTERVAL,
+    POLL_TIMEOUT_GAP,
     RECONNECT_MAX_DELAY,
     RECONNECT_MIN_DELAY,
-    POLL_TIMEOUT_GAP,
     build_get_status_action,
     parse_status,
 )

@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Optional
-
 
 # --- Network / observation constants (single source of truth) ---
 PLAYER_HOST = "localhost"
@@ -33,9 +31,9 @@ class QueueItem:
     id: int
     title: str
     artist: str
-    year: Optional[int]
-    duration: Optional[int]
-    singer: Optional[str]
+    year: int | None
+    duration: int | None
+    singer: str | None
     item_state: str
 
 
@@ -44,13 +42,13 @@ class StatusSnapshot:
     """Normalized, in-memory view of a <status> response."""
 
     state: str
-    position: Optional[int]
-    pitch: Optional[int]
-    tempo: Optional[int]
+    position: int | None
+    pitch: int | None
+    tempo: int | None
     queue: list[QueueItem] = field(default_factory=list)
 
 
-def _text(elem: Optional[ET.Element]) -> Optional[str]:
+def _text(elem: ET.Element | None) -> str | None:
     """Return stripped text of *elem*, or None if absent/empty."""
     if elem is None:
         return None
@@ -63,7 +61,7 @@ def _text(elem: Optional[ET.Element]) -> Optional[str]:
     return stripped
 
 
-def _to_int(value: Optional[str]) -> Optional[int]:
+def _to_int(value: str | None) -> int | None:
     if value is None:
         return None
     try:
