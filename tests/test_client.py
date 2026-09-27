@@ -5,12 +5,18 @@ from karafun_intercept.client import (
     Error,
     KarafunClient,
     StatusUpdate,
+    Transport,
     build_get_status_action,
 )
 
 
-class FakeTransport:
-    """In-memory transport: replays scripted messages, records sends."""
+class FakeTransport(Transport):
+    """In-memory transport: replays scripted messages, records sends.
+
+    Subclassed from Transport so it is a proper subtype for the
+    transport_factory type contract and inherits the async-context-manager
+    protocol (__aenter__ / __aexit__) that client.events() relies on.
+    """
 
     def __init__(self, messages, block_when_empty=False):
         self._messages = list(messages)
@@ -30,13 +36,6 @@ class FakeTransport:
 
     async def close(self):
         self.closed = True
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        await self.close()
-        return False
 
 
 class FakeFactory:
