@@ -1,6 +1,6 @@
 # karafun-intercept
 
-A [Textual](https://textual.textualize.io/) terminal user interface (TUI) that observes the local KaraFun Player over its Player Control WebSocket (`ws://127.0.0.1:57570`), parses XML status updates, and tracks turn order, singers, new-song notifications, and per-user recency.
+A [Textual](https://textual.textualize.io/) terminal user interface (TUI) that observes the local KaraFun Player over its Player Control WebSocket (`ws://localhost:57570`), parses XML status updates, and tracks turn order, singers, new-song notifications, and per-user recency.
 
 ## Requirements
 
