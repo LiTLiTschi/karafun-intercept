@@ -154,7 +154,8 @@ class KaraFunInterceptApp(App):
 def main() -> None:
     """Entry point for the karafun-intercept TUI."""
     logging.basicConfig(level=logging.INFO)
-    KaraFunInterceptApp().run()
+    client = KarafunClient()
+    KaraFunInterceptApp(client=client).run()
 
 
 if __name__ == "__main__":

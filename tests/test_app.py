@@ -1,8 +1,10 @@
 import asyncio
+from unittest.mock import MagicMock, patch
 
 from textual.widgets import OptionList, Static
 
 from karafun_intercept.app import KaraFunInterceptApp
+from karafun_intercept.client import StatusUpdate
 from karafun_intercept.xml_proto import parse_status
 
 
@@ -74,5 +76,59 @@ def test_refresh_action_renames_current(status1_xml):
             app.action_refresh()
             await pilot.pause()
             assert "song a" in str(app.query_one("#current", Static).content).lower()
+
+    _run(main())
+
+
+# --- Client integration tests (bug #3: TUI showed IDLE due to missing client) ---
+
+
+class _FakeClient:
+    """Minimal stand-in for KarafunClient that yields scripted events."""
+
+    def __init__(self, events):
+        self._events = list(events)
+
+    async def events(self):
+        for ev in self._events:
+            yield ev
+
+
+def test_main_injects_real_client():
+    """Regression for bug #3: main() must create a KarafunClient and inject it.
+
+    Before the fix, main() called KaraFunInterceptApp() with no client, so
+    on_mount never started the _observe() worker and the TUI stayed IDLE.
+    """
+    from karafun_intercept.app import main
+
+    with patch("karafun_intercept.app.KaraFunInterceptApp") as mock_app_cls:
+        mock_app = MagicMock()
+        mock_app_cls.return_value = mock_app
+        main()
+        assert "client" in mock_app_cls.call_args.kwargs
+        assert mock_app_cls.call_args.kwargs["client"] is not None
+        mock_app.run.assert_called_once()
+
+
+def test_injected_client_events_render_in_ui(status1_xml):
+    """The _observe worker processes client events and renders them in the UI.
+
+    This verifies the full pipeline: client.events() → _observe() →
+    feed_snapshot() → model → render. Without a wired-up client this
+    pipeline never fires, which is why the TUI showed IDLE.
+    """
+    snapshot = parse_status(status1_xml)
+    client = _FakeClient([StatusUpdate(snapshot=snapshot)])
+    app = KaraFunInterceptApp(client=client)
+
+    async def main():
+        async with app.run_test() as pilot:
+            # The _observe worker starts in on_mount; allow it to run.
+            await pilot.pause()
+            await pilot.pause()
+            cur = str(app.query_one("#current", Static).content).lower()
+            assert "song a" in cur and "playing" in cur
+            assert app.query_one("#queue", OptionList).option_count == 2
 
     _run(main())
