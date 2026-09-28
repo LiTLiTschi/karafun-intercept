@@ -17,6 +17,7 @@
 - **git and github:** `always use the git and github tools provided by the harness for those operations`
 - **Diagnostics (pi-lens):** `lens_diagnostics` is read-only (params: `source`, `scope`, `mode`, `severity`, `paths`, `waitMs`, `refreshRunners`) -- it reports findings but has no mark-FP capability. To record a false-positive disposition for a *reported* finding, activate the `lens_diagnostic_mark` situational tool via `pi_lens_activate_tools` (which makes it callable), then invoke it with the finding's `file` + `line` + `rule` + `message`; a `suppress` disposition also writes a pi-lens inline ignore. Re-run `lens_diagnostics` to confirm the finding cleared.
 - **Model selection:** the primary model is the one configured for this environment. All subagents, reviewers, workers, scouts, and any dispatched agents MUST use that same primary model — do NOT fall back to a separate provider-specific model. If dispatching an `Agent`, pass the primary model explicitly; announcing it in text does not set it.
+- **Cross-platform:** The project targets both Windows and Linux. Python source uses `pathlib.Path` (never raw path separators) and `subprocess.run` with explicit arg lists (never `shell=True`). Install one-liners differ by platform: PowerShell (`irm … | iex`) on Windows, POSIX shell (`curl … | sh`) on Linux/macOS. `karafun update` and `karafun branch-*` require `git` in `PATH` on both platforms.
 
 ## Workflow Discipline
 
@@ -26,7 +27,7 @@ Enforce this ritual on every coding task so the known friction points stop recur
 
 1. **Load context. Run `mem_context` if memory is wired up; read `PHILOSOPHY.md` (and `ARCHITECTURE.md` if the project has one) before touching code.**
 2. **Parallelize discovery.** Batch all initial `read`s + any `git show`/reference fetches in one call. Fetch a reference to a temp file (`git show <ref>:<path> > /tmp/x.py`) instead of eyeballing remote diffs.
-3. **Prefer the project's venv/bin first.** Put `.venv/bin` (or the project-local `scripts/dev/*` wrappers if present) ahead of PATH. Never hardcode system interpreter/test/lint paths (`/usr/bin/pytest`, `/home/liu/.local/bin/ruff`, `python -m <pkg>` without setting `PYTHONPATH`).
+3. **Prefer the project's venv/bin first.** Put `.venv/bin` (Unix/macOS) or `.venv/Scripts` (Windows) ahead of PATH. Never hardcode system interpreter/test/lint paths (`/usr/bin/pytest`, `/home/liu/.local/bin/ruff`, `python -m <pkg>` without setting `PYTHONPATH`).
 4. **Match fixture conventions -- grep first.** Existing tests use `tmp_path: Path`, bare `monkeypatch`, bare `capsys`. Never invent types (e.g. `capsys: pytest.CaptureFixture[str]`) -- grep `tests/` for the convention before annotating anything.
 5. **Put env vars on the exact command that needs them.** A `VAR=... cmd1 && cmd2` chain only exports `VAR` to `cmd1`.
 
