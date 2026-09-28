@@ -103,8 +103,6 @@ def _run_intercept(state_dir: Path, *, debug: bool = False) -> int:
 
 def _run_update(state_dir: Path, *, debug: bool = False) -> int:
     """Update karafun by reinstalling from the latest commit on the selected branch."""
-    import os
-
     branch = _selected_branch(state_dir)
     with contextlib.suppress(OSError):
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -116,12 +114,7 @@ def _run_update(state_dir: Path, *, debug: bool = False) -> int:
         print("Install uv: https://docs.astral.sh/uv/", file=sys.stderr)
         return 1
 
-    gh_token = os.environ.get("GH_TOKEN", "")
-    if gh_token:
-        git_url = f"git+https://{gh_token}@github.com/LiTLiTschi/karafun-intercept.git@{branch}"
-    else:
-        git_url = f"git+https://github.com/LiTLiTschi/karafun-intercept.git@{branch}"
-
+    git_url = f"git+https://github.com/LiTLiTschi/karafun-intercept.git@{branch}"
     print(f"Installing karafun from github origin/{branch} ...")
 
     cmd = [
