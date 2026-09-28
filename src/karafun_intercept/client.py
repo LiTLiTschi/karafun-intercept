@@ -95,7 +95,9 @@ async def _connect_websocket(host: str, port: int) -> Transport:
     import websockets
 
     uri = f"ws://{host}:{port}/"
+    _log.info("connecting to %s", uri)
     ws = await websockets.connect(uri)
+    _log.debug("connected to %s", uri)
     return WebSocketTransport(ws)
 
 
@@ -185,13 +187,16 @@ class KarafunClient:
                 poll.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await poll
+                _log.debug("reconnecting in %.1fs", backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, self._reconnect_max)
 
 
 def main() -> None:
     """Smoke entry: stream events to logging (manual testing only)."""
-    logging.basicConfig(level=logging.INFO)
+    from karafun_intercept._logging import setup_logging
+
+    setup_logging(debug=True)
     client = KarafunClient()
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(_consume(client))

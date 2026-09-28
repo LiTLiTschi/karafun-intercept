@@ -30,6 +30,7 @@ Enforce this ritual on every coding task so the known friction points stop recur
 3. **Prefer the project's venv/bin first.** Put `.venv/bin` (Unix/macOS) or `.venv/Scripts` (Windows) ahead of PATH. Never hardcode system interpreter/test/lint paths (`/usr/bin/pytest`, `/home/liu/.local/bin/ruff`, `python -m <pkg>` without setting `PYTHONPATH`).
 4. **Match fixture conventions -- grep first.** Existing tests use `tmp_path: Path`, bare `monkeypatch`, bare `capsys`. Never invent types (e.g. `capsys: pytest.CaptureFixture[str]`) -- grep `tests/` for the convention before annotating anything.
 5. **Put env vars on the exact command that needs them.** A `VAR=... cmd1 && cmd2` chain only exports `VAR` to `cmd1`.
+6. **Log appropriately.** Use `logging.info()` for user-visible progress and `logging.debug()` for diagnostic detail. Debug logs go to `~/.karafun_intercept/session.log` when `--debug` is passed. See PHILOSOPHY.md Contract 8.
 
 ### While verifying
 

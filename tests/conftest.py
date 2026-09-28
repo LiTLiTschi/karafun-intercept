@@ -1,6 +1,21 @@
 import datetime as dt
+import logging
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def restore_logging():
+    """Save and restore the root logger's handlers/level after each test."""
+    root = logging.getLogger()
+    saved_handlers = root.handlers[:]
+    saved_level = root.level
+    yield
+    for h in root.handlers:
+        if h not in saved_handlers:
+            h.close()
+    root.handlers = saved_handlers
+    root.level = saved_level
 
 
 @pytest.fixture

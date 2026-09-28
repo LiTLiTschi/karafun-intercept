@@ -67,7 +67,7 @@ def handle_action(self, action: str) -> object:
 def handle_action(self, action: str) -> object:
     if action == "back":
         return Back()  # re-implementing what super() already does
-    return Stay()
+    return super().handle_action(action)
 ```
 
 ---
@@ -130,25 +130,27 @@ Use `log_level`, not `logging.level`.
 
 ---
 
-## Contract 8: DEBUG_VVV Logging — Log Everything
+## Contract 8: Logging Levels — Debug and Info
 
-**Statement:** At the deepest debug level (`DEBUG - 2`, e.g. `DEBUG_VVV`), everything even theoretically loggable MUST be logged — as much detail as possible. This level is only used for agentic/debugging, so any and every detail that CAN be logged SHOULD be logged.
+**Statement:** The project uses only standard Python `logging.DEBUG` and `logging.INFO` levels — no custom levels. `info` logs are shown on the console; `debug` logs are written to `~/.karafun_intercept/session.log` when debug mode is enabled (`karafun intercept --debug`). At the debug level, everything even theoretically loggable MUST be logged — as much detail as possible. This level is only used for agentic/debugging, so any and every detail that CAN be logged SHOULD be logged.
 
-**Import pattern (project-specific path):**
+**Import pattern:**
 
 ```python
-from <project>.logging._config import DEBUG_VVV
+import logging
+_log = logging.getLogger(__name__)
 ```
 
 **Usage:**
 
 ```python
-_log.log(DEBUG_VVV, "descriptive message with %s interpolation", some_value)
+_log.info("Connecting to ws://%s:%s/", host, port)  # user-visible progress
+_log.debug("WebSocket handshake complete, sending getStatus")  # diagnostic detail
 ```
 
-Every state transition, every decision branch, every value that might inform debugging should be surfaced at this level. No detail is too small. The cost of missing a log line during debugging is higher than the cost of logging it.
+Every state transition, every decision branch, every value that might inform debugging should be surfaced at DEBUG level. No detail is too small. The cost of missing a log line during debugging is higher than the cost of logging it.
 
-**Detection:** grep for the project's `DEBUG_VVV` import in new modules -> verify used pervasively in methods with branching logic or state transitions.
+**Detection:** grep for `_log.debug(` in new modules -> verify used pervasively in methods with branching logic or state transitions; grep for `_log.info(` -> verify used for user-visible progress.
 
 ---
 
@@ -293,7 +295,7 @@ Default: `"INFO"`.
 
 ### Workflow rules
 
-1. **Per-file/per-item progress** MUST be logged at `logging.DEBUG` level, not the deepest debug level. This is the standard level for detailed progress that users opt into by setting `progress_popup_logging_level` to `"DEBUG"`.
+1. **Per-file/per-item progress** MUST be logged at `logging.DEBUG` level. This is the standard level for detailed progress that users opt into by setting `progress_popup_logging_level` to `\"DEBUG\"`.
 
 2. **Batch-level status** (start, completion, summary counts) MUST be logged at `logging.INFO` level so they always appear in the popup at default verbosity.
 
@@ -302,7 +304,7 @@ Default: `"INFO"`.
    ```python
    from <project>.rich.popup_log_bridge import PopupLogBridge
 
-   with PopupLogBridge("project.workflow.my_workflow", context, "DEBUG"):
+   with PopupLogBridge(\"project.workflow.my_workflow\", context, \"DEBUG\"):
        ...  # all logging at DEBUG+ reaches the popup
    ```
 
@@ -315,21 +317,21 @@ Default: `"INFO"`.
 
    Use the logger's `info()`/`debug()` for per-item progress that respects the user's configured verbosity.
 
-5. **Workflow code MUST NOT use the deepest debug level (`DEBUG_VVV`) for progress that should ever appear in the popup.** That level is a firehose for debugging only. Popup-bridge filtering is configured independently via `progress_popup_logging_level` — they serve different purposes.
+5. **Workflow code MUST NOT use `logging.DEBUG` level for progress that should ever appear in the popup.** The DEBUG level is a firehose for debugging only. Popup-bridge filtering is configured independently via `progress_popup_logging_level` — they serve different purposes.
 
 ### Example
 
 ```python
-_log = logging.getLogger("project.workflow.copy_files")
+_log = logging.getLogger(\"project.workflow.copy_files\")
 
 # Per-file progress (visible in popup only when level=DEBUG)
-_log.debug("Copying: %s", relative_path)
+_log.debug(\"Copying: %s\", relative_path)
 
 # Batch summary (always visible in popup)
-_log.info("Copied %d files to %s", count, target)
+_log.info(\"Copied %d files to %s\", count, target)
 ```
 
-**Detection:** verify each workflow uses `_logger.debug()` for per-item progress and `_logger.info()` for batch summaries; verify the popup log bridge is used where the logger should feed into the popup; verify `DEBUG_VVV` is NOT used for popup-visible progress.
+**Detection:** verify each workflow uses `_logger.debug()` for per-item progress and `_logger.info()` for batch summaries; verify the popup log bridge is used where the logger should feed into the popup; verify `DEBUG` level is NOT used for popup-visible progress.
 
 ---
 

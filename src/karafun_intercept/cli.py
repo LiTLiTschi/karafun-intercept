@@ -101,7 +101,7 @@ def _run_intercept(state_dir: Path, *, debug: bool = False) -> int:
     """Launch the Textual TUI."""
     from karafun_intercept.app import main as _app_main
 
-    _app_main()
+    _app_main(debug=debug)
     return 0
 
 
