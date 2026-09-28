@@ -14,9 +14,12 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
+import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from karafun_intercept._version import __version__
@@ -102,6 +105,102 @@ def _run_intercept(state_dir: Path, *, debug: bool = False) -> int:
     return 0
 
 
+def _is_windows() -> bool:
+    """Return True when running on Windows."""
+    return platform.system() == "Windows"
+
+
+def _report_update_result(result: subprocess.CompletedProcess[str]) -> int:
+    """Print the outcome of a completed ``uv tool install`` and return exit code."""
+    if result.returncode != 0:
+        if result.stderr.strip():
+            print(f"uv tool install failed:\n{result.stderr}", file=sys.stderr)
+        return 1
+
+    output = result.stdout.strip()
+    if "already up to date" in output.lower():
+        print("karafun is already up to date.")
+    else:
+        print(output or "karafun updated successfully.")
+    return 0
+
+
+def _build_update_batch(parent_pid: int, uv_cmd_line: str) -> str:
+    """Build the contents of a Windows batch file that waits for *parent_pid*
+    to exit before running *uv_cmd_line*.
+
+    Using a batch file run by ``cmd.exe`` (residing in System32) avoids
+    spawning a Python child from the tool's own Scripts directory, which would
+    itself hold a lock that uv cannot remove.
+    """
+    # Escape '%' for batch-file double-precision (% -> %%) so paths or URLs
+    # containing '%' don't break the script.
+    uv_cmd_line = uv_cmd_line.replace("%", "%%")
+    return (
+        "@echo off\n"
+        f"REM karafun update — detached updater (waits for parent PID {parent_pid})\n"
+        f":waitloop\n"
+        f'tasklist /fi "PID eq {parent_pid}" 2>nul | find "{parent_pid}" >nul 2>&1\n'
+        "if %errorlevel%==0 (\n"
+        "    timeout /t 1 /nobreak >nul 2>&1\n"
+        "    goto waitloop\n"
+        ")\n"
+        "REM Parent exited — locks released.  Grace period for handle cleanup.\n"
+        "timeout /t 1 /nobreak >nul 2>&1\n"
+        f"{uv_cmd_line}\n"
+        "exit /b %errorlevel%\n"
+    )
+
+
+def _run_update_windows(cmd: list[str], *, debug: bool = False) -> int:
+    """Run the update on Windows via a detached updater process.
+
+    JUSTIFICATION (PHILOSOPHY Contract 12 — Windows-specific branching):
+    On Windows the running ``karafun.exe`` launcher holds an exclusive lock on
+    itself in the tool's ``Scripts`` directory.  ``uv tool install --force``
+    tries to remove that directory to reinstall and fails with
+    "Access is denied" (os error 5).  Linux/macOS allow deleting open files,
+    so this only manifests on Windows.  The detached ``cmd.exe`` child
+    (residing in System32, not the locked Scripts dir) waits for the parent
+    process to exit—releasing the lock—then runs the same ``uv`` command.
+    """
+    parent_pid = os.getpid()
+    uv_cmd_line = subprocess.list2cmdline(cmd)
+
+    batch_content = _build_update_batch(parent_pid, uv_cmd_line)
+    batch_path = Path(tempfile.gettempdir()) / f"karafun-update-{parent_pid}.bat"
+    batch_path.write_text(batch_content, encoding="utf-8")
+
+    if debug:
+        print(f"Detached updater batch file: {batch_path}", file=sys.stderr)
+
+    # Spawn detached: cmd.exe (from System32, NOT in the locked Scripts dir)
+    # runs the batch in a new process group.  close_fds=True ensures we do not
+    # inherit handles from the locked Scripts directory.  stdout/stderr remain
+    # inherited so uv output is visible in the caller's console.
+    #
+    # CREATE_NEW_PROCESS_GROUP is only defined on Windows; getattr lets this
+    # file type-check on every platform even though _run_update_windows is
+    # only ever called on Windows.
+    creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    try:
+        subprocess.Popen(
+            ["cmd.exe", "/c", str(batch_path)],
+            creationflags=creation_flags,
+            close_fds=True,
+        )
+    except FileNotFoundError:
+        print("cmd.exe not found — cannot run the detached updater.", file=sys.stderr)
+        return 1
+
+    print(
+        "Update starting in a separate process...\n"
+        "The current process will exit first to release the file lock on "
+        "karafun.exe (Windows file locking), then the installer will run."
+    )
+    return 0
+
+
 def _run_update(state_dir: Path, *, debug: bool = False) -> int:
     """Update karafun by reinstalling from the latest commit on the selected branch."""
     branch = _selected_branch(state_dir)
@@ -132,6 +231,12 @@ def _run_update(state_dir: Path, *, debug: bool = False) -> int:
     if debug:
         print(" ".join(cmd), file=sys.stderr)
 
+    # On Windows the running karafun.exe locks itself in the tool's Scripts
+    # directory; uv's --force reinstall cannot remove the locked file.  We
+    # delegate to a detached updater that waits for this process to exit first.
+    if _is_windows():
+        return _run_update_windows(cmd, debug=debug)
+
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=False)
     except KeyboardInterrupt:
@@ -144,17 +249,7 @@ def _run_update(state_dir: Path, *, debug: bool = False) -> int:
         print("Update timed out. Check your network connection.", file=sys.stderr)
         return 1
 
-    if result.returncode != 0:
-        if result.stderr.strip():
-            print(f"uv tool install failed:\n{result.stderr}", file=sys.stderr)
-        return 1
-
-    output = result.stdout.strip()
-    if "already up to date" in output.lower():
-        print("karafun is already up to date.")
-    else:
-        print(output or "karafun updated successfully.")
-    return 0
+    return _report_update_result(result)
 
 
 def _run_branch_show(state_dir: Path) -> int:
