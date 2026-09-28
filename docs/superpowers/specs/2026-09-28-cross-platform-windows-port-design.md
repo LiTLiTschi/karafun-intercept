@@ -1,6 +1,6 @@
 # Cross-Platform Windows Port — Design Spec
 
-> **Status:** Draft — written after brainstorming (Approach B approved).
+> **Status:** Approved — implemented and verified. Cross-platform support (Windows + Linux) is now in CI.
 > **Goal:** Make karafun-intercept installable, runnable, and testable on both Windows and Linux from the start, with a PowerShell one-liner install for Windows and CI enforcing both platforms.
 > **No code is written until this spec is approved.**
 
