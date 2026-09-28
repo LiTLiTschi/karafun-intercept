@@ -151,9 +151,15 @@ class KaraFunInterceptApp(App):
         self.query_one("#notifications", Static).update(banner)
 
 
-def main() -> None:
-    """Entry point for the karafun-intercept TUI."""
-    logging.basicConfig(level=logging.INFO)
+def main(*, debug: bool = False) -> None:
+    """Entry point for the karafun-intercept TUI.
+
+    Pass debug=True (or run ``karafun intercept --debug``) to write DEBUG-level
+    diagnostics to ~/.karafun_intercept/session.log.
+    """
+    from karafun_intercept._logging import setup_logging
+
+    setup_logging(debug=debug)
     client = KarafunClient()
     KaraFunInterceptApp(client=client).run()
 

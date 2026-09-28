@@ -204,7 +204,7 @@ Widgets (kept simple; YAGNI — no nested component tree):
 ## 8. Error Handling & Connection Lifecycle
 
 - **Player not running / connect refused:** show "Connecting to KaraFun Player…" and retry per backoff. Do not crash; keep UI responsive.
-- **Parse error on inbound XML:** log the raw blob (DEBUG_VVV equivalent / `--log-xml`), drop the message, keep connection open. Do not propagate to crash the model.
+- **Parse error on inbound XML:** log the raw blob at DEBUG level (via `karafun intercept --debug`, written to `~/.karafun_intercept/session.log`), drop the message, keep connection open. Do not propagate to crash the model.
 - **Unexpected XML element/field:** ignore unknown fields (forward-compatible); known fields with missing children → sentinel/`None`.
 - **Reconnection:** on socket close/error, back off (5s→30s, jittered) and reconnect; on (re)connect, re-seed with `getStatus`.
 - **Graceful shutdown:** closing the app closes the WebSocket cleanly.
