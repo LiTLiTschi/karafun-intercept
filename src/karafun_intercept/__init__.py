@@ -1,3 +1,5 @@
 """Karafun Intercept — a Textual TUI application."""
 
-__version__ = "0.1.0"
+from karafun_intercept._version import __version__
+
+__all__ = ["__version__"]
