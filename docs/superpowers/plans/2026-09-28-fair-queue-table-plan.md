@@ -22,7 +22,7 @@
 | `src/karafun_intercept/app.py` | Add `FairQueueScreen` class + `_format_elapsed` helper + `Tab` binding on `KaraFunInterceptApp` |
 | `tests/conftest.py` | Add `status3_xml` fixture (Alice/Bob with new songs) |
 | `tests/test_model.py` | Add 4 tests: turn tracking, turn dedup, last-added on new song, idle no-turn |
-| `tests/test_app.py` | Add 5 tests: table renders singers, sorting, empty state, live timer, Tab switch |
+| `tests/test_app.py` | Add 6 tests: table renders singers, sorting, empty state, live timer, Tab switch roundtrip, snapshot updates |
 
 **Verification:** `pytest tests/test_model.py tests/test_app.py -W error` and `ruff check src/karafun_intercept/model.py src/karafun_intercept/app.py tests/test_model.py tests/test_app.py`
 
@@ -113,6 +113,8 @@ def status3_xml():
     return STATUS3_XML
 ```
 
+> **Note on `STATUS3_XML`:** Alice (known from STATUS1) adds a *new* song ("Song D") at the front while playing. Bob (known from STATUS1) adds a *new* song ("Song E"). This lets us test that `singer_last_added` updates for known singers when they queue new songs, while `known_singers` and `singer_first_seen` remain unchanged.
+
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run:
@@ -123,7 +125,7 @@ Expected: FAIL with `AttributeError` (fields `singer_turns`, `singer_last_added`
 
 - [ ] **Step 3: Implement the model extensions**
 
-Edit `src/karafun_intercept/model.py` — add to `__init__`:
+Edit `src/karafun_intercept/model.py` — add to `__init__` (after `self._front_singer: str | None = None`):
 
 ```python
         self.singer_last_added: dict[str, datetime] = {}
@@ -133,7 +135,7 @@ Edit `src/karafun_intercept/model.py` — add to `__init__`:
         self._last_scored_turn_singer: str | None = None
 ```
 
-Edit `apply_status` — insert new-add detection after `self._current = snapshot`:
+Edit `apply_status` — insert new-add detection right after `self._current = snapshot`:
 
 ```python
         # --- new-add detection: which songs are new to the queue? ---
@@ -148,7 +150,7 @@ Edit `apply_status` — insert new-add detection after `self._current = snapshot
         self._seen_song_keys = current_song_keys
 ```
 
-Edit `apply_status` — after `front = ...` and before the existing `TurnAdvanced` notification, add turn counting:
+Edit `apply_status` — after `front = snapshot.queue[0].singer if snapshot.queue else None` and before the existing `TurnAdvanced` notification block, add turn counting:
 
 ```python
         # --- turn counting: front singer while playing ---
@@ -159,7 +161,7 @@ Edit `apply_status` — after `front = ...` and before the existing `TurnAdvance
                 self._last_scored_turn_singer = front
 ```
 
-**Important:** The existing `TurnAdvanced` notification logic and `self._front_singer = front` line stay unchanged after this insertion.
+**Important:** The existing `TurnAdvanced` notification logic (`if front is not None and front != self._front_singer:`) and `self._front_singer = front` line come **after** the inserted turn-counting block and remain unchanged.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -182,19 +184,20 @@ git commit -m "feat: add fair-queue tracking to SessionModel"
 
 **Files:**
 - Modify: `src/karafun_intercept/app.py` — add `FairQueueScreen`, `_format_elapsed`, required imports
-- Test: `tests/test_app.py` — add 3 tests (renders, sorting, empty state)
+- Test: `tests/test_app.py` — add 4 tests (renders, sorting, empty state, live timer)
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `tests/test_app.py`:
+Add imports (near existing imports at top of `tests/test_app.py`):
 
 ```python
-from datetime import datetime, timezone
-from unittest.mock import patch
-
 from textual.widgets import DataTable
+from karafun_intercept.app import FairQueueScreen
+```
 
+Add 4 test functions:
 
+```python
 def test_fair_queue_table_renders_all_singers(status1_xml, status2_xml):
     app = KaraFunInterceptApp()
 
@@ -227,10 +230,6 @@ def test_fair_queue_table_sorting(status1_xml, status2_xml):
             await pilot.press("tab")
             await pilot.pause()
 
-            table = app.query_one("#fair_queue_table", DataTable)
-
-            # Default sort: name ascending
-            first_asc = str(table.get_row_at(0))
             # Trigger sort on "# turns" column by calling the handler directly
             screen = app.query_one(FairQueueScreen)
             screen._sort_column = "turns"
@@ -238,6 +237,7 @@ def test_fair_queue_table_sorting(status1_xml, status2_xml):
             screen._render_table()
             await pilot.pause()
 
+            table = app.query_one("#fair_queue_table", DataTable)
             # Alice has 1 turn, Bob has 1 turn, Cara has 0 turns -> Cara first
             first_turns = str(table.get_row_at(0))
             assert "cara" in first_turns.lower()
@@ -265,6 +265,30 @@ def test_fair_queue_table_empty_state():
             assert "waiting" in row.lower()
 
     _run(main())
+
+
+def test_fair_queue_live_timer(status1_xml):
+    app = KaraFunInterceptApp()
+
+    async def main():
+        async with app.run_test() as pilot:
+            app.feed_snapshot(parse_status(status1_xml))
+            await pilot.pause()
+            await pilot.press("tab")
+            await pilot.pause()
+
+            table = app.query_one("#fair_queue_table", DataTable)
+            assert table.row_count == 2  # Alice, Bob
+
+            # Wait for the 1-second timer to fire and re-render
+            await pilot.pause(1.2)
+            await pilot.pause()
+
+            # Table should still have rows after the timer tick
+            table = app.query_one("#fair_queue_table", DataTable)
+            assert table.row_count == 2
+
+    _run(main())
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -273,21 +297,21 @@ Run:
 ```bash
 pytest tests/test_app.py -v -k "fair_queue" -W error
 ```
-Expected: FAIL — `FairQueueScreen` class not found, `Tab` binding not registered.
+Expected: FAIL — `FairQueueScreen` class not found, `Tab` binding not registered on `KaraFunInterceptApp`.
 
 - [ ] **Step 3: Implement FairQueueScreen**
 
-Add imports to `app.py`:
+Add imports to `app.py` (extend existing import block):
 
 ```python
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from textual.app import App, ComposeResult, Screen
 from textual.widgets import DataTable, Footer, Header, OptionList, Static
 ```
 
-Add module-level helper:
+Add module-level helper (after `_log = logging.getLogger(__name__)`):
 
 ```python
 def _format_elapsed(delta: timedelta) -> str:
@@ -316,9 +340,12 @@ class FairQueueScreen(Screen):
         Binding("r", "refresh", "Refresh"),
     ]
 
-    def __init__(self, *, model: SessionModel, **kwargs) -> None:
+    def __init__(
+        self, *, model: SessionModel, now: Callable[[], datetime] | None = None, **kwargs
+    ) -> None:
         super().__init__(**kwargs)
         self._model = model
+        self._now = now if now is not None else lambda: datetime.now(timezone.utc)
         self._sort_column: str = "name"
         self._sort_reverse: bool = False
 
@@ -368,7 +395,7 @@ class FairQueueScreen(Screen):
         rows: list[dict[str, str]] = []
         for s in singers:
             last_turn = self._model.singer_last_turn.get(s)
-            elapsed = (datetime.now(timezone.utc) - last_turn) if last_turn else None
+            elapsed = (self._now() - last_turn) if last_turn else None
             last_added = self._model.singer_last_added.get(s)
             rows.append({
                 "name": s,
@@ -401,13 +428,19 @@ class FairQueueScreen(Screen):
         self._render_table()
 ```
 
+> **CSS:** The `CSS` class attribute fills `#fair_queue_table` to full width and remaining height, with a `$primary` border (Contract 10 palette). Empty state is a single row with placeholder text (no separate widget needed).
+
+> **Sorting:** `DataTable` column headers are clickable by default. `on_data_table_header_clicked` fires on click; `event.column.key` matches the keys set in `_setup_table`. Click cycles asc → desc.
+
+> **Live timer:** `set_interval(1.0, self._tick)` fires every second while the screen is mounted. `_tick` calls `_render_table` which re-formats the "Since Last Turn" column using `self._now() — singer_last_turn`. The timer is automatically cancelled when the screen is popped (Textual lifecycle).
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run:
 ```bash
 pytest tests/test_app.py -v -k "fair_queue" -W error
 ```
-Expected: All 3 new tests pass.
+Expected: All 4 new tests pass.
 
 - [ ] **Step 5: Commit**
 
@@ -480,7 +513,7 @@ Run:
 ```bash
 pytest tests/test_app.py -v -k "tab_roundtrip or updates_on_snapshot" -W error
 ```
-Expected: FAIL — `feed_snapshot` doesn't call `_render_table`, `Tab` binding not registered on app.
+Expected: FAIL — `feed_snapshot` doesn't call `_render_table`, `Tab` binding not registered on `KaraFunInterceptApp`.
 
 - [ ] **Step 3: Implement Tab navigation + feed_snapshot integration**
 
@@ -495,13 +528,13 @@ Edit `KaraFunInterceptApp.BINDINGS` — add Tab binding:
     ]
 ```
 
-Edit `KaraFunInterceptApp.__init__` — add table screen ref:
+Edit `KaraFunInterceptApp.__init__` — add table screen ref (after `self._notifications: list[str] = []`):
 
 ```python
         self._table_screen: FairQueueScreen | None = None
 ```
 
-Edit `feed_snapshot` — add table re-render after `_render_all()`:
+Edit `feed_snapshot` — add table re-render after `self._render_all()`:
 
 ```python
     def feed_snapshot(self, snapshot: StatusSnapshot) -> None:
@@ -510,7 +543,7 @@ Edit `feed_snapshot` — add table re-render after `_render_all()`:
             self._notifications.extend(n.message for n in notes)
             self._notifications = self._notifications[-MAX_NOTIFICATIONS:]
         self._render_all()
-        if self._table_screen is not None:
+        if self._table_screen is not None and isinstance(self.screen, FairQueueScreen):
             self._table_screen._render_table()
 ```
 
