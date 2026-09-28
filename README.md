@@ -12,12 +12,18 @@ A [Textual](https://textual.textualize.io/) terminal user interface (TUI) that o
 
 ### Prerequisites
 
-- **[uv](https://docs.astral.sh/uv/)** — install via `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- **[uv](https://docs.astral.sh/uv/)** — install via `curl -LsSf https://astral.sh/uv/install.sh | sh` (Linux/macOS) or `irm https://astral.sh/uv/install.ps1 | iex` (Windows)
 
 ### Install (one-liner)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LiTLiTschi/karafun-intercept/master/scripts/install.sh | sh
+```
+
+#### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/LiTLiTschi/karafun-intercept/master/scripts/install.ps1 | iex
 ```
 
 This downloads the install script, which checks for `uv` (offering to install it), then runs `uv tool install` to install the `karafun` command globally.
@@ -36,6 +42,8 @@ karafun update      # rebuild from latest commit on the selected branch
 ```
 
 `karafun update` reinstalls from the configured branch at GitHub origin (see `karafun branch-show` / `karafun branch-list` / `karafun branch-switch N` to select a branch).
+
+> **Note (Windows):** `karafun update` and `karafun branch-*` require `git` in `PATH`. Install [Git for Windows](https://git-scm.com/download/win) or the [GitHub CLI](https://cli.github.com/).
 
 If `karafun update` fails, use `uv` directly to force reinstall:
 

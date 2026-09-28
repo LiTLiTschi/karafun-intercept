@@ -17,6 +17,7 @@
 - **git and github:** `always use the git and github tools provided by the harness for those operations`
 - **Diagnostics (pi-lens):** `lens_diagnostics` is read-only (params: `source`, `scope`, `mode`, `severity`, `paths`, `waitMs`, `refreshRunners`) -- it reports findings but has no mark-FP capability. To record a false-positive disposition for a *reported* finding, activate the `lens_diagnostic_mark` situational tool via `pi_lens_activate_tools` (which makes it callable), then invoke it with the finding's `file` + `line` + `rule` + `message`; a `suppress` disposition also writes a pi-lens inline ignore. Re-run `lens_diagnostics` to confirm the finding cleared.
 - **Model selection:** the primary model is the one configured for this environment. All subagents, reviewers, workers, scouts, and any dispatched agents MUST use that same primary model — do NOT fall back to a separate provider-specific model. If dispatching an `Agent`, pass the primary model explicitly; announcing it in text does not set it.
+- **Cross-platform:** The project targets both Windows and Linux. Python source uses `pathlib.Path` (never raw path separators) and `subprocess.run` with explicit arg lists (never `shell=True`). Install one-liners differ by platform: PowerShell (`irm … | iex`) on Windows, POSIX shell (`curl … | sh`) on Linux/macOS. `karafun update` and `karafun branch-*` require `git` in `PATH` on both platforms.
 
 ## Workflow Discipline
 
@@ -26,7 +27,7 @@ Enforce this ritual on every coding task so the known friction points stop recur
 
 1. **Load context. Run `mem_context` if memory is wired up; read `PHILOSOPHY.md` (and `ARCHITECTURE.md` if the project has one) before touching code.**
 2. **Parallelize discovery.** Batch all initial `read`s + any `git show`/reference fetches in one call. Fetch a reference to a temp file (`git show <ref>:<path> > /tmp/x.py`) instead of eyeballing remote diffs.
-3. **Prefer the project's venv/bin first.** Put `.venv/bin` (or the project-local `scripts/dev/*` wrappers if present) ahead of PATH. Never hardcode system interpreter/test/lint paths (`/usr/bin/pytest`, `/home/liu/.local/bin/ruff`, `python -m <pkg>` without setting `PYTHONPATH`).
+3. **Prefer the project's venv/bin first.** Put `.venv/bin` (Unix/macOS) or `.venv/Scripts` (Windows) ahead of PATH. Never hardcode system interpreter/test/lint paths (`/usr/bin/pytest`, `/home/liu/.local/bin/ruff`, `python -m <pkg>` without setting `PYTHONPATH`).
 4. **Match fixture conventions -- grep first.** Existing tests use `tmp_path: Path`, bare `monkeypatch`, bare `capsys`. Never invent types (e.g. `capsys: pytest.CaptureFixture[str]`) -- grep `tests/` for the convention before annotating anything.
 5. **Put env vars on the exact command that needs them.** A `VAR=... cmd1 && cmd2` chain only exports `VAR` to `cmd1`.
 
@@ -137,3 +138,26 @@ Constraints to always include: `Read ONLY these files: ...`, `Limit: max N files
 ## Non-Goals
 
 - **No silent auto-migration.** Config migrations are always explicit and user-triggered (e.g. via a `migrate` command). Never auto-apply migrations during startup or any other implicit path — this keeps debugging simple and gives the user full control over state changes.
+
+## Spec Lifecycle Management
+
+- **Active specs** live in `docs/superpowers/specs/`. Specs start as drafts, get reviewed, and are refined until the implementation is complete.
+- **Implemented specs** are archived to `docs/implemented-specs/` as the **last step after merge**. Copy the final, post-implementation-updated spec file to this directory so it serves as the canonical record of what was shipped.
+- **`docs/implemented-specs/` is the primary research source for shipped features.** When doing codebase research on how a feature was designed or implemented, look here first — these specs reflect the actual code, not the idealized draft. Use `docs/superpowers/specs/` only for features still in development.
+- **Spec update discipline:** Before copying to `docs/implemented-specs/`, update the spec in `docs/superpowers/specs/` to reflect the final implementation (corrected file paths, actual commit SHAs, final test counts, removed approaches). This ensures the archived version is the ground truth.
+
+## Plannotator Review
+
+When running `superpowers_plan_review` or `superpowers_spec_review`, ALWAYS pass the **full content of the plan/spec file**, never a summary or the subagent's return text.
+
+**Correct:**
+
+```python
+plan_content = Path("docs/superpowers/plans/2026-09-28-cross-platform-windows-port-plan.md").read_text()
+superpowers_plan_review(planContent=plan_content, planFilePath="docs/superpowers/plans/2026-09-28-cross-platform-windows-port-plan.md")
+```
+
+**Wrong:** Passing a summary like "4 tasks: 1. Create X, 2. Implement Y..."
+
+The subagent's return value is typically a summary. Always read the actual file before invoking the review.
+

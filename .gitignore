@@ -26,3 +26,8 @@ htmlcov/
 .vscode/
 *.swp
 .DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+*.lnk

@@ -231,9 +231,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="karafun",
         description="Observe the local KaraFun Player in a Textual TUI",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"karafun {__version__}"
-    )
+    parser.add_argument("--version", action="version", version=f"karafun {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def _add_debug(subparser: argparse.ArgumentParser) -> None:
