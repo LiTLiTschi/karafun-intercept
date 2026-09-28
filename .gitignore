@@ -20,6 +20,7 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
+uv.lock
 
 # IDEs / editors
 .idea/
