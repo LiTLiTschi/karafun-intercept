@@ -99,6 +99,11 @@ The model does NOT format dates or compute elapsed time — that is TUI renderin
 class FairQueueScreen(Screen):
     """Full-screen sortable table of singer fair-queue metrics."""
 
+    CSS = """
+    Screen { layout: vertical; }
+    #fair_queue_table { width: 100%; height: 1fr; border: solid $primary; }
+    """
+
     BINDINGS = [
         Binding("tab", "switch_view", "Back"),
         Binding("q", "quit", "Quit"),
@@ -123,7 +128,11 @@ class FairQueueScreen(Screen):
         self.set_interval(1.0, self._tick)  # live timer for elapsed columns
 ```
 
+> **CSS:** The `CSS` class attribute fills the `#fair_queue_table` `DataTable` to the full screen width and remaining height, with a primary-color border matching Contract 10's palette. The empty-state placeholder is handled via `_render_table()` toggling table visibility (no separate widget needed).
+
 ### Columns
+
+> **`known_singers`** is an *existing* field on `SessionModel` (not added by this spec). It tracks the set of all singers ever seen across snapshots. The table iterates over this set so even singers whose songs already played remain visible for fairness auditing.
 
 | Column Key | Header | Data Source | Format |
 |---|---|---|---|
@@ -177,7 +186,15 @@ def _compute_rows(self) -> list[dict[str, str]]:
     return rows
 ```
 
-**`_format_elapsed`:** Converts a `timedelta` to `HH:MM` string (e.g. 18 min 22 sec → `18:22`). Uses total seconds.
+**`_format_elapsed`:** Converts a `timedelta` to `HH:MM` string (e.g. 18 min 22 sec → `18:22`). Implementation:
+
+```python
+def _format_elapsed(delta: timedelta) -> str:
+    total = int(delta.total_seconds())
+    hours, remainder = divmod(total, 3600)
+    minutes = remainder // 60
+    return f"{hours:02d}:{minutes:02d}"
+```
 
 ### Column header click → sort
 
@@ -209,6 +226,10 @@ def _render_table(self) -> None:
     table = self.query_one("#fair_queue_table", DataTable)
     table.clear()
     rows = self._compute_rows()
+    if not rows:
+        table.add_row("Waiting for singers to join…", "", "", "", key="empty")
+        table.set_cell_style(0, 0, Style(color="dim", italic=True), wait_for_refresh=False)
+        return
     for i, row in enumerate(rows):
         table.add_row(row["name"], row["last_added"], row["turns"], row["since_last_turn"], key=str(i))
 ```
