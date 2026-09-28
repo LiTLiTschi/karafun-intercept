@@ -97,7 +97,7 @@ def test_client_to_model_pipeline(status1_xml, status2_xml):
     assert set(model.singer_recency) == {"Alice", "Bob", "Cara"}
 
 
-@pytest.mark.skip(reason="live player only: requires KaraFun Player at ws://localhost:57570")
+@pytest.mark.skip(reason="live player only: requires KaraFun Player at ws://127.0.0.1:57570")
 def test_live_player_emits_status():
     seen = []
 

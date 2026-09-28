@@ -62,7 +62,7 @@ def test_build_get_status_action_noqueue():
 
 
 def test_constants():
-    assert PLAYER_HOST == "localhost"
+    assert PLAYER_HOST == "127.0.0.1"
     assert PLAYER_PORT == 57570
     assert POLL_INTERVAL == 2.0
     assert POLL_TIMEOUT_GAP == 3.0

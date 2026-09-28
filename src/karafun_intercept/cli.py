@@ -98,7 +98,8 @@ def _run_intercept(state_dir: Path, *, debug: bool = False) -> int:
     """Launch the Textual TUI."""
     from karafun_intercept.app import main as _app_main
 
-    return _app_main()
+    _app_main()
+    return 0
 
 
 def _run_update(state_dir: Path, *, debug: bool = False) -> int:
