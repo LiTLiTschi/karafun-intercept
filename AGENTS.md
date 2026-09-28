@@ -138,3 +138,26 @@ Constraints to always include: `Read ONLY these files: ...`, `Limit: max N files
 ## Non-Goals
 
 - **No silent auto-migration.** Config migrations are always explicit and user-triggered (e.g. via a `migrate` command). Never auto-apply migrations during startup or any other implicit path — this keeps debugging simple and gives the user full control over state changes.
+
+## Spec Lifecycle Management
+
+- **Active specs** live in `docs/superpowers/specs/`. Specs start as drafts, get reviewed, and are refined until the implementation is complete.
+- **Implemented specs** are archived to `docs/implemented-specs/` as the **last step after merge**. Copy the final, post-implementation-updated spec file to this directory so it serves as the canonical record of what was shipped.
+- **`docs/implemented-specs/` is the primary research source for shipped features.** When doing codebase research on how a feature was designed or implemented, look here first — these specs reflect the actual code, not the idealized draft. Use `docs/superpowers/specs/` only for features still in development.
+- **Spec update discipline:** Before copying to `docs/implemented-specs/`, update the spec in `docs/superpowers/specs/` to reflect the final implementation (corrected file paths, actual commit SHAs, final test counts, removed approaches). This ensures the archived version is the ground truth.
+
+## Plannotator Review
+
+When running `superpowers_plan_review` or `superpowers_spec_review`, ALWAYS pass the **full content of the plan/spec file**, never a summary or the subagent's return text.
+
+**Correct:**
+
+```python
+plan_content = Path("docs/superpowers/plans/2026-09-28-cross-platform-windows-port-plan.md").read_text()
+superpowers_plan_review(planContent=plan_content, planFilePath="docs/superpowers/plans/2026-09-28-cross-platform-windows-port-plan.md")
+```
+
+**Wrong:** Passing a summary like "4 tasks: 1. Create X, 2. Implement Y..."
+
+The subagent's return value is typically a summary. Always read the actual file before invoking the review.
+
