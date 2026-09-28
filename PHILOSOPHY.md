@@ -333,6 +333,31 @@ _log.info("Copied %d files to %s", count, target)
 
 ---
 
+## Contract 12: Cross-Platform — Windows + Linux First
+
+**Statement:** The project MUST build, install, run, and test on both Windows and Linux.
+No platform-specific shell scripts or Unix-only assumptions are permitted in any
+code path that a user or developer touches.
+
+- Install one-liners exist for **both** platforms: PowerShell (`irm … | iex`) for
+  Windows, POSIX shell (`curl … | sh`) for Linux/macOS.
+- `karafun update` and `karafun branch-*` MUST work on both platforms — they rely
+  only on `uv` and `git` being in PATH (both available cross-platform).
+- No code may branch on `sys.platform`/`os.name` into platform-specific behavior
+  unless explicitly justified (path separators are always handled via `pathlib.Path`).
+- `.gitignore` MUST include Windows-specific artifacts (Thumbs.db, etc.).
+- CI MUST run tests on both Windows and Linux (matrix).
+
+**Why it matters:** The KaraFun Player is Windows-only, but the observer app's code
+and tests are cross-platform. CI on both platforms ensures cross-platform correctness
+is enforced on every change — not just documented and forgotten.
+
+**Detection:** grep for `sys.platform`, `os.name`, `os.path.join`, `shell=True` in
+`src/` — flag any without explicit justification comments; verify `.github/workflows/ci.yml`
+runs on a matrix including `windows-latest`.
+
+---
+
 ## Enforcement
 
 These contracts are **part of code review**, not optional guidelines. Any change that violates a contract has produced buggy code. The fix is not to add a comment — it's to restructure the code to obey the contract.
