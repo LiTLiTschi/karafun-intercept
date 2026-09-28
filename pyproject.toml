@@ -18,6 +18,7 @@ dev = [
 
 [project.scripts]
 karafun-intercept = "karafun_intercept.app:main"
+karafun = "karafun_intercept.cli:main"
 
 [build-system]
 requires = ["hatchling"]
