@@ -10,9 +10,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 
 # --- Network / observation constants (single source of truth) ---
-# Use 127.0.0.1 (not "localhost") so the websockets library avoids IPv6 ::1
-# resolution on Windows, where the KaraFun Player binds IPv4 only.
-PLAYER_HOST = "127.0.0.1"
+PLAYER_HOST = "localhost"
 PLAYER_PORT = 57570
 
 POLL_INTERVAL = 2.0
